@@ -1,35 +1,39 @@
-import { SignedIn, SignedOut, useSession, useUser } from '@clerk/clerk-expo'
-import { Link } from 'expo-router'
-import { StyleSheet, View, Text } from 'react-native'
+import { SignedIn, SignedOut, useUser, useAuth } from "@clerk/clerk-expo";
+import { Link } from "expo-router";
+import { StyleSheet, View, Text, TouchableOpacity } from "react-native";
 
 export default function Page() {
-  const { user } = useUser()
-
-  // If your user isn't appearing as signed in,
-  // it's possible they have session tasks to complete.
-  // Learn more: https://clerk.com/docs/guides/configure/session-tasks
-  const { session } = useSession()
-  console.log(session?.currentTask)
+  const { user } = useUser();
+  const { signOut } = useAuth();
 
   return (
     <View style={styles.container}>
       <Text>Welcome!</Text>
-      {/* Show the sign-in and sign-up buttons when the user is signed out */}
+
+      {/* Quand l'utilisateur est déconnecté */}
       <SignedOut>
         <Link href="/(auth)/sign-in">
-          <Text>Sign in</Text>
+          <Text style={styles.link}>Sign in</Text>
         </Link>
+
         <Link href="/(auth)/signup">
-          <Text>Sign up</Text>
+          <Text style={styles.link}>Sign up</Text>
         </Link>
       </SignedOut>
-      {/* Show the sign-out button when the user is signed in */}
-      <SignedIn>
-        <Text>Hello {user?.emailAddresses[0].emailAddress}</Text>
 
+      {/* Quand l'utilisateur est connecté */}
+      <SignedIn>
+        <Text style={styles.email}>
+          Hello {user?.emailAddresses[0].emailAddress}
+        </Text>
+
+        {/* ✅ Bouton Sign Out */}
+        <TouchableOpacity style={styles.button} onPress={() => signOut()}>
+          <Text style={styles.buttonText}>Sign out</Text>
+        </TouchableOpacity>
       </SignedIn>
     </View>
-  )
+  );
 }
 
 const styles = StyleSheet.create({
@@ -38,4 +42,22 @@ const styles = StyleSheet.create({
     padding: 20,
     gap: 16,
   },
-})
+  link: {
+    fontSize: 16,
+    color: "blue",
+  },
+  email: {
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  button: {
+    backgroundColor: "red",
+    padding: 12,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  buttonText: {
+    color: "#fff",
+    fontWeight: "600",
+  },
+});
