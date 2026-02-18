@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
     View,
     Text,
@@ -10,6 +10,7 @@ import {
 import { useRouter } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useLocalSearchParams } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 
 export default function CameraScreen() {
     const router = useRouter();
@@ -19,6 +20,11 @@ export default function CameraScreen() {
 
     const { mealType } = useLocalSearchParams();
 
+    useFocusEffect(
+        React.useCallback(() => {
+            setScanned(false);
+        }, [])
+    );
 
     // 🔐 Vérification permission
     if (!permission) {
