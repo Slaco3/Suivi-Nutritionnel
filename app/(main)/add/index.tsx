@@ -7,15 +7,22 @@ import {
   FlatList,
   StyleSheet,
   Alert,
+  ScrollView,
 } from "react-native";
 import { useRouter } from "expo-router";
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useLocalSearchParams } from "expo-router";
 
 type MealType = "Petit-déjeuner" | "Déjeuner" | "Dîner" | "Snack";
 
 type Food = {
   id: string;
   name: string;
+  calories: number;
+  proteins: number;
+  carbs: number;
+  fats: number;
+  quantity: number;
 };
 
 type Meal = {
@@ -33,48 +40,8 @@ export default function AddMealScreen() {
   const [results, setResults] = useState<Food[]>([]);
   const [selectedFoods, setSelectedFoods] = useState<Food[]>([]);
   const [loading, setLoading] = useState(false);
-  const [meals, setMeals] = useState<Meal[]>([]);
-
-  // Charger les repas au démarrage
-  useEffect(() => {
-    loadMeals();
-  }, []);
-
-  // Sauvegarder les repas à chaque modification
-  useEffect(() => {
-    if (meals.length > 0) {
-      saveMeals();
-    }
-  }, [meals]);
-
-  const loadMeals = async () => {
-    try {
-      const storedMeals = await AsyncStorage.getItem('meals');
-      if (storedMeals) {
-        setMeals(JSON.parse(storedMeals));
-      }
-    } catch (error) {
-      console.error("Erreur lors du chargement des repas:", error);
-    }
-  };
-
-  const saveMeals = async () => {
-    try {
-      await AsyncStorage.setItem('meals', JSON.stringify(meals));
-    } catch (error) {
-      console.error("Erreur lors de la sauvegarde des repas:", error);
-    }
-  };
-
-  const deleteMeal = async (id: string) => {
-    try {
-      const updatedMeals = meals.filter(meal => meal.id !== id);
-      setMeals(updatedMeals);
-      await AsyncStorage.setItem('meals', JSON.stringify(updatedMeals));
-    } catch (error) {
-      console.error("Erreur lors de la suppression du repas:", error);
-    }
-  };
+  // const { scannedFood } = useLocalSearchParams();
+  const { scannedFood, mealType: scannedMealType } = useLocalSearchParams();
 
   // 🔁 Debounce 400ms
   useEffect(() => {
@@ -90,6 +57,22 @@ export default function AddMealScreen() {
     return () => clearTimeout(timeout);
   }, [query]);
 
+  useEffect(() => {
+    if (scannedFood) {
+      const food = JSON.parse(scannedFood as string);
+      setSelectedFoods(prev => {
+        if (prev.find(f => f.id === food.id)) return prev; // évite doublon
+        return [...prev, food]; // ✅ utilise prev, pas la closure
+      });
+    }
+  }, [scannedFood]);
+
+  useEffect(() => {
+    if (scannedMealType) {
+      setMealType(scannedMealType as MealType);
+    }
+  }, [scannedMealType]);
+
   const searchFood = async (text: string) => {
     try {
       setLoading(true);
@@ -98,18 +81,23 @@ export default function AddMealScreen() {
           text
         )}&search_simple=1&json=1&page_size=10`
       );
-      const json = await res.json();
+      const data = await res.json();
 
-      const foods: Food[] = json.products
-        ?.filter((p: any) => p.product_name)
+      const foods: Food[] = data.products
+        .filter((p: any) => p.product_name)
         .map((p: any) => ({
-          id: p.id,
+          id: p.code || Math.random().toString(),
           name: p.product_name,
+          calories: Math.round(p.nutriments?.["energy-kcal_100g"] ?? 0),
+          proteins: Math.round(p.nutriments?.proteins_100g ?? 0),
+          carbs: Math.round(p.nutriments?.carbohydrates_100g ?? 0),
+          fats: Math.round(p.nutriments?.fat_100g ?? 0),
+          quantity: 100,
         }));
 
-      setResults(foods || []);
-    } catch (e) {
-      console.error(e);
+      setResults(foods);
+    } catch (error) {
+      Alert.alert("Erreur", "Impossible de récupérer les aliments.");
     } finally {
       setLoading(false);
     }
@@ -117,11 +105,20 @@ export default function AddMealScreen() {
 
   const addFood = (food: Food) => {
     if (selectedFoods.find((f) => f.id === food.id)) return;
-    setSelectedFoods((prev) => [...prev, food]);
+    setSelectedFoods([...selectedFoods, food]);
+    setQuery("");
+    setResults([]);
   };
 
   const removeFood = (id: string) => {
-    setSelectedFoods((prev) => prev.filter(food => food.id !== id));
+    setSelectedFoods(selectedFoods.filter((f) => f.id !== id));
+  };
+
+  const updateQuantity = (id: string, quantity: string) => {
+    const qty = parseInt(quantity) || 0;
+    setSelectedFoods(
+      selectedFoods.map((f) => (f.id === id ? { ...f, quantity: qty } : f))
+    );
   };
 
   const validateMeal = async () => {
@@ -134,100 +131,126 @@ export default function AddMealScreen() {
       date: new Date().toISOString(),
     };
 
-    setMeals(prev => [...prev, newMeal]);
-    setMealType(null);
-    setSelectedFoods([]);
-    setQuery("");
-
-    router.back();
+    try {
+      const stored = await AsyncStorage.getItem("meals");
+      const meals: Meal[] = stored ? JSON.parse(stored) : [];
+      meals.push(newMeal);
+      await AsyncStorage.setItem("meals", JSON.stringify(meals));
+      Alert.alert("✅ Succès", "Repas ajouté !");
+      router.back();
+    } catch (error) {
+      Alert.alert("Erreur", "Impossible de sauvegarder le repas.");
+    }
   };
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container}>
       <Text style={styles.title}>Ajouter un repas</Text>
 
-      {/* 🍽 Type de repas */}
+      {/* Type de repas */}
       <View style={styles.mealTypeContainer}>
-        {["Petit-déjeuner", "Déjeuner", "Dîner", "Snack"].map((type) => (
-          <TouchableOpacity
-            key={type}
-            onPress={() => setMealType(type as MealType)}
-            style={[
-              styles.mealTypeButton,
-              mealType === type && styles.mealTypeButtonActive,
-            ]}
-          >
-            <Text
+        {(["Petit-déjeuner", "Déjeuner", "Dîner", "Snack"] as MealType[]).map(
+          (type) => (
+            <TouchableOpacity
+              key={type}
               style={[
-                styles.mealTypeText,
-                mealType === type && styles.mealTypeTextActive,
+                styles.mealTypeButton,
+                mealType === type && styles.mealTypeButtonActive,
               ]}
+              onPress={() => setMealType(type)}
             >
-              {type}
-            </Text>
-          </TouchableOpacity>
-        ))}
+              <Text
+                style={[
+                  styles.mealTypeText,
+                  mealType === type && styles.mealTypeTextActive,
+                ]}
+              >
+                {type}
+              </Text>
+            </TouchableOpacity>
+          )
+        )}
       </View>
 
-      {/* 🔍 Recherche */}
+      {/* Recherche */}
       <TextInput
+        style={styles.input}
         placeholder="Rechercher un aliment..."
         value={query}
         onChangeText={setQuery}
-        style={styles.input}
       />
+
+      {loading && <Text style={styles.loadingText}>Recherche en cours...</Text>}
 
       {/* Résultats */}
-      <FlatList
-        data={results}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.resultItem}
-            onPress={() => addFood(item)}
-          >
-            <Text>{item.name}</Text>
-          </TouchableOpacity>
-        )}
-        ListEmptyComponent={
-          query && !loading ? <Text>Aucun résultat</Text> : null
-        }
-      />
+      {results.map((food) => (
+        <TouchableOpacity
+          key={food.id}
+          style={styles.resultItem}
+          onPress={() => addFood(food)}
+        >
+          <Text style={styles.resultName}>{food.name}</Text>
+          <Text style={styles.resultInfo}>
+            {food.calories} kcal | P: {food.proteins}g | G: {food.carbs}g | L:{" "}
+            {food.fats}g
+          </Text>
+        </TouchableOpacity>
+      ))}
 
-      {/* 🧾 Aliments ajoutés */}
-      <View style={styles.selectedContainer}>
-        <Text style={styles.subtitle}>Aliments ajoutés</Text>
-        {selectedFoods.map((food) => (
-          <View key={food.id} style={styles.foodItem}>
-            <Text>• {food.name}</Text>
-            <TouchableOpacity onPress={() => removeFood(food.id)}>
-              <Text style={styles.removeText}>✕</Text>
-            </TouchableOpacity>
-          </View>
-        ))}
-      </View>
+      {/* Aliments sélectionnés */}
+      {selectedFoods.length > 0 && (
+        <View style={styles.selectedContainer}>
+          <Text style={styles.subtitle}>Aliments sélectionnés :</Text>
+          {selectedFoods.map((food) => (
+            <View key={food.id} style={styles.foodItem}>
+              <View style={styles.foodInfo}>
+                <Text style={styles.foodName}>{food.name}</Text>
+                <Text style={styles.foodMacros}>
+                  {Math.round((food.calories * food.quantity) / 100)} kcal
+                </Text>
+              </View>
+              <View style={styles.foodActions}>
+                <TextInput
+                  style={styles.quantityInput}
+                  keyboardType="numeric"
+                  value={food.quantity.toString()}
+                  onChangeText={(val) => updateQuantity(food.id, val)}
+                />
+                <Text style={styles.gramText}>g</Text>
+                <TouchableOpacity onPress={() => removeFood(food.id)}>
+                  <Text style={styles.removeText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
 
-      {/* 📷 Scanner */}
+      {/* Scanner */}
       <TouchableOpacity
         style={styles.scanButton}
-        onPress={() => router.push("/add/camera")}
+        onPress={() => router.push({
+          pathname: "/add/camera",
+          params: { mealType: mealType ?? "" } // ✅ on envoie le mealType
+        })}
       >
-        <Text style={styles.scanButtonText}>Scanner un code-barres</Text>
+
+        <Text style={styles.scanButtonText}>📷 Scanner un code-barres</Text>
       </TouchableOpacity>
 
-      {/* ✅ Valider */}
+      {/* Valider */}
       <TouchableOpacity
         disabled={!mealType || selectedFoods.length === 0}
         style={[
           styles.validateButton,
           (!mealType || selectedFoods.length === 0) &&
-            styles.validateButtonDisabled,
+          styles.validateButtonDisabled,
         ]}
         onPress={validateMeal}
       >
         <Text style={styles.validateButtonText}>Valider</Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -272,27 +295,73 @@ const styles = StyleSheet.create({
     padding: 10,
     marginBottom: 8,
   },
+  loadingText: {
+    color: "#999",
+    marginBottom: 8,
+    fontStyle: "italic",
+  },
   resultItem: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderColor: "#eee",
+  },
+  resultName: {
+    fontSize: 15,
+    fontWeight: "500",
+  },
+  resultInfo: {
+    fontSize: 12,
+    color: "#888",
+    marginTop: 2,
+  },
+  selectedContainer: {
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontWeight: "600",
+    marginBottom: 8,
+    fontSize: 16,
+  },
+  foodItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingVertical: 8,
     borderBottomWidth: 1,
     borderColor: "#eee",
   },
-  selectedContainer: {
-    marginTop: 12,
+  foodInfo: {
+    flex: 1,
   },
-  subtitle: {
-    fontWeight: "600",
-    marginBottom: 4,
+  foodName: {
+    fontSize: 14,
+    fontWeight: "500",
   },
-  foodItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 4,
+  foodMacros: {
+    fontSize: 12,
+    color: "#888",
+  },
+  foodActions: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  quantityInput: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 6,
+    padding: 4,
+    width: 50,
+    textAlign: "center",
+  },
+  gramText: {
+    marginHorizontal: 4,
+    color: "#666",
   },
   removeText: {
-    color: 'red',
+    color: "red",
     marginLeft: 8,
+    fontSize: 16,
   },
   scanButton: {
     marginTop: 16,
@@ -307,6 +376,7 @@ const styles = StyleSheet.create({
   },
   validateButton: {
     marginTop: 12,
+    marginBottom: 32,
     padding: 14,
     backgroundColor: "#4CAF50",
     borderRadius: 8,
