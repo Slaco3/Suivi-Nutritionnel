@@ -1,17 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
-  FlatList,
   StyleSheet,
   Alert,
   ScrollView,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useLocalSearchParams } from "expo-router";
 
 type MealType = "Petit-déjeuner" | "Déjeuner" | "Dîner" | "Snack";
 
@@ -34,70 +32,81 @@ type Meal = {
 
 export default function AddMealScreen() {
   const router = useRouter();
+  const { scannedFood, mealType: scannedMealType } = useLocalSearchParams();
 
   const [mealType, setMealType] = useState<MealType | null>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Food[]>([]);
   const [selectedFoods, setSelectedFoods] = useState<Food[]>([]);
   const [loading, setLoading] = useState(false);
-  // const { scannedFood } = useLocalSearchParams();
-  const { scannedFood, mealType: scannedMealType } = useLocalSearchParams();
 
-  // 🔁 Debounce 400ms
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Récupère mealType depuis la caméra
   useEffect(() => {
-    if (!query.trim()) {
-      setResults([]);
-      return;
-    }
+    if (scannedMealType) setMealType(scannedMealType as MealType);
+  }, [scannedMealType]);
 
-    const timeout = setTimeout(() => {
-      searchFood(query);
-    }, 400);
-
-    return () => clearTimeout(timeout);
-  }, [query]);
-
+  // Récupère aliment scanné depuis la caméra
   useEffect(() => {
     if (scannedFood) {
       const food = JSON.parse(scannedFood as string);
-      setSelectedFoods(prev => {
-        if (prev.find(f => f.id === food.id)) return prev; // évite doublon
-        return [...prev, food]; // ✅ utilise prev, pas la closure
+      setSelectedFoods((prev) => {
+        if (prev.find((f) => f.id === food.id)) return prev;
+        return [...prev, food];
       });
     }
   }, [scannedFood]);
 
-  useEffect(() => {
-    if (scannedMealType) {
-      setMealType(scannedMealType as MealType);
-    }
-  }, [scannedMealType]);
+  // Debounce pour recherche
+  const handleSearch = (text: string) => {
+    setQuery(text);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => searchFood(text), 500);
+  };
 
+  // Recherche aliments via OpenFoodFacts
   const searchFood = async (text: string) => {
+    if (text.trim().length < 2) {
+      setResults([]);
+      return;
+    }
+
     try {
       setLoading(true);
-      const res = await fetch(
-        `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(
-          text
-        )}&search_simple=1&json=1&page_size=10`
-      );
+      const url = `https://fr.openfoodfacts.org/cgi/search.pl?` +
+        `search_terms=${encodeURIComponent(text)}` +
+        `&search_simple=1&action=process&json=1` +
+        `&fields=code,product_name,product_name_fr,nutriments` +
+        `&page_size=10`;
+
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent": "CalorieTracker/1.0",
+          Accept: "application/json",
+        },
+      });
+
       const data = await res.json();
 
-      const foods: Food[] = data.products
-        .filter((p: any) => p.product_name)
-        .map((p: any) => ({
-          id: p.code || Math.random().toString(),
-          name: p.product_name,
-          calories: Math.round(p.nutriments?.["energy-kcal_100g"] ?? 0),
-          proteins: Math.round(p.nutriments?.proteins_100g ?? 0),
-          carbs: Math.round(p.nutriments?.carbohydrates_100g ?? 0),
-          fats: Math.round(p.nutriments?.fat_100g ?? 0),
-          quantity: 100,
-        }));
+      const foods: Food[] = (data.products ?? [])
+        .filter((p: any) => p.product_name || p.product_name_fr)
+        .map((p: any) => {
+          const nutr = p.nutriments ?? {};
+          return {
+            id: p.code,
+            name: p.product_name_fr || p.product_name || "Inconnu",
+            calories: Math.round(nutr["energy-kcal_100g"] ?? 0),
+            proteins: Math.round(nutr.proteins_100g ?? 0),
+            carbs: Math.round(nutr.carbohydrates_100g ?? 0),
+            fats: Math.round(nutr.fat_100g ?? 0),
+            quantity: 100,
+          };
+        });
 
       setResults(foods);
-    } catch (error) {
-      Alert.alert("Erreur", "Impossible de récupérer les aliments.");
+    } catch (err) {
+      Alert.alert("Erreur", "Recherche impossible.");
     } finally {
       setLoading(false);
     }
@@ -128,7 +137,7 @@ export default function AddMealScreen() {
       id: Date.now().toString(),
       type: mealType,
       foods: selectedFoods,
-      date: new Date().toISOString(),
+      date: new Date().toISOString().split("T")[0],
     };
 
     try {
@@ -136,9 +145,12 @@ export default function AddMealScreen() {
       const meals: Meal[] = stored ? JSON.parse(stored) : [];
       meals.push(newMeal);
       await AsyncStorage.setItem("meals", JSON.stringify(meals));
+      setSelectedFoods([]);
+      setQuery("");
+      setMealType(null);
       Alert.alert("✅ Succès", "Repas ajouté !");
-      router.back();
-    } catch (error) {
+      router.replace("/(main)/(home)");
+    } catch {
       Alert.alert("Erreur", "Impossible de sauvegarder le repas.");
     }
   };
@@ -177,9 +189,8 @@ export default function AddMealScreen() {
         style={styles.input}
         placeholder="Rechercher un aliment..."
         value={query}
-        onChangeText={setQuery}
+        onChangeText={handleSearch}
       />
-
       {loading && <Text style={styles.loadingText}>Recherche en cours...</Text>}
 
       {/* Résultats */}
@@ -229,12 +240,13 @@ export default function AddMealScreen() {
       {/* Scanner */}
       <TouchableOpacity
         style={styles.scanButton}
-        onPress={() => router.push({
-          pathname: "/add/camera",
-          params: { mealType: mealType ?? "" } // ✅ on envoie le mealType
-        })}
+        onPress={() =>
+          router.push({
+            pathname: "/add/camera",
+            params: { mealType: mealType ?? "" },
+          })
+        }
       >
-
         <Text style={styles.scanButtonText}>📷 Scanner un code-barres</Text>
       </TouchableOpacity>
 
@@ -255,21 +267,9 @@ export default function AddMealScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-    backgroundColor: "#fff",
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: "600",
-    marginBottom: 12,
-  },
-  mealTypeContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginBottom: 12,
-  },
+  container: { flex: 1, padding: 16, backgroundColor: "#fff" },
+  title: { fontSize: 22, fontWeight: "600", marginBottom: 12 },
+  mealTypeContainer: { flexDirection: "row", flexWrap: "wrap", marginBottom: 12 },
   mealTypeButton: {
     padding: 8,
     borderRadius: 8,
@@ -278,115 +278,27 @@ const styles = StyleSheet.create({
     marginRight: 8,
     marginBottom: 8,
   },
-  mealTypeButtonActive: {
-    backgroundColor: "#4CAF50",
-    borderColor: "#4CAF50",
-  },
-  mealTypeText: {
-    color: "#333",
-  },
-  mealTypeTextActive: {
-    color: "#fff",
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 8,
-  },
-  loadingText: {
-    color: "#999",
-    marginBottom: 8,
-    fontStyle: "italic",
-  },
-  resultItem: {
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderColor: "#eee",
-  },
-  resultName: {
-    fontSize: 15,
-    fontWeight: "500",
-  },
-  resultInfo: {
-    fontSize: 12,
-    color: "#888",
-    marginTop: 2,
-  },
-  selectedContainer: {
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontWeight: "600",
-    marginBottom: 8,
-    fontSize: 16,
-  },
-  foodItem: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderColor: "#eee",
-  },
-  foodInfo: {
-    flex: 1,
-  },
-  foodName: {
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  foodMacros: {
-    fontSize: 12,
-    color: "#888",
-  },
-  foodActions: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  quantityInput: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 6,
-    padding: 4,
-    width: 50,
-    textAlign: "center",
-  },
-  gramText: {
-    marginHorizontal: 4,
-    color: "#666",
-  },
-  removeText: {
-    color: "red",
-    marginLeft: 8,
-    fontSize: 16,
-  },
-  scanButton: {
-    marginTop: 16,
-    padding: 12,
-    backgroundColor: "#2196F3",
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  scanButtonText: {
-    color: "#fff",
-    fontWeight: "600",
-  },
-  validateButton: {
-    marginTop: 12,
-    marginBottom: 32,
-    padding: 14,
-    backgroundColor: "#4CAF50",
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  validateButtonDisabled: {
-    backgroundColor: "#ccc",
-  },
-  validateButtonText: {
-    color: "#fff",
-    fontWeight: "600",
-  },
+  mealTypeButtonActive: { backgroundColor: "#4CAF50", borderColor: "#4CAF50" },
+  mealTypeText: { color: "#333" },
+  mealTypeTextActive: { color: "#fff" },
+  input: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 10, marginBottom: 8 },
+  loadingText: { color: "#999", marginBottom: 8, fontStyle: "italic" },
+  resultItem: { paddingVertical: 10, borderBottomWidth: 1, borderColor: "#eee" },
+  resultName: { fontSize: 15, fontWeight: "500" },
+  resultInfo: { fontSize: 12, color: "#888", marginTop: 2 },
+  selectedContainer: { marginTop: 16, marginBottom: 8 },
+  subtitle: { fontWeight: "600", marginBottom: 8, fontSize: 16 },
+  foodItem: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8, borderBottomWidth: 1, borderColor: "#eee" },
+  foodInfo: { flex: 1 },
+  foodName: { fontSize: 14, fontWeight: "500" },
+  foodMacros: { fontSize: 12, color: "#888" },
+  foodActions: { flexDirection: "row", alignItems: "center" },
+  quantityInput: { borderWidth: 1, borderColor: "#ccc", borderRadius: 6, padding: 4, width: 50, textAlign: "center" },
+  gramText: { marginHorizontal: 4, color: "#666" },
+  removeText: { color: "red", marginLeft: 8, fontSize: 16 },
+  scanButton: { marginTop: 16, padding: 12, backgroundColor: "#2196F3", borderRadius: 8, alignItems: "center" },
+  scanButtonText: { color: "#fff", fontWeight: "600" },
+  validateButton: { marginTop: 12, marginBottom: 32, padding: 14, backgroundColor: "#4CAF50", borderRadius: 8, alignItems: "center" },
+  validateButtonDisabled: { backgroundColor: "#ccc" },
+  validateButtonText: { color: "#fff", fontWeight: "600" },
 });
