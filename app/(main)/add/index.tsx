@@ -40,17 +40,14 @@ export default function AddMealScreen() {
   const [selectedFoods, setSelectedFoods] = useState<Food[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ✅ Récupère le mealType envoyé depuis la caméra
+  // Récupère mealType depuis la caméra
   useEffect(() => {
-    if (scannedMealType) {
-      setMealType(scannedMealType as MealType);
-    }
+    if (scannedMealType) setMealType(scannedMealType as MealType);
   }, [scannedMealType]);
 
-  // ✅ Récupère l'aliment scanné depuis la caméra
+  // Récupère aliment scanné depuis la caméra
   useEffect(() => {
     if (scannedFood) {
       const food = JSON.parse(scannedFood as string);
@@ -61,18 +58,14 @@ export default function AddMealScreen() {
     }
   }, [scannedFood]);
 
-  // ✅ Handler du TextInput avec debounce + abort
+  // Debounce pour recherche
   const handleSearch = (text: string) => {
     setQuery(text);
-
     if (debounceRef.current) clearTimeout(debounceRef.current);
-
-    debounceRef.current = setTimeout(() => {
-      searchFood(text);
-    }, 500);
+    debounceRef.current = setTimeout(() => searchFood(text), 500);
   };
 
-  // ✅ Fetch avec AbortController pour éviter les race conditions
+  // Recherche aliments via OpenFoodFacts
   const searchFood = async (text: string) => {
     if (text.trim().length < 2) {
       setResults([]);
@@ -81,23 +74,13 @@ export default function AddMealScreen() {
 
     try {
       setLoading(true);
-
-      if (abortRef.current) abortRef.current.abort();
-
-      const controller = new AbortController();
-      abortRef.current = controller;
-
-      setTimeout(() => controller.abort(), 4000);
-
-      const url =
-        `https://fr.openfoodfacts.org/cgi/search.pl?` +
+      const url = `https://fr.openfoodfacts.org/cgi/search.pl?` +
         `search_terms=${encodeURIComponent(text)}` +
         `&search_simple=1&action=process&json=1` +
         `&fields=code,product_name,product_name_fr,nutriments` +
         `&page_size=10`;
 
       const res = await fetch(url, {
-        signal: controller.signal,
         headers: {
           "User-Agent": "CalorieTracker/1.0",
           Accept: "application/json",
@@ -106,27 +89,24 @@ export default function AddMealScreen() {
 
       const data = await res.json();
 
-      const foods: Food[] = (data.products ?? []).map((p: any) => {
-        const nutr = p.nutriments ?? {};
-
-        return {
-          id: p.code,
-          name: p.product_name_fr || p.product_name || "Inconnu",
-          calories: Math.round(
-            nutr["energy-kcal_100g"] ?? nutr.energy_kcal_100g ?? 0
-          ),
-          proteins: Math.round(nutr.proteins_100g ?? 0),
-          carbs: Math.round(nutr.carbohydrates_100g ?? 0),
-          fats: Math.round(nutr.fat_100g ?? 0),
-          quantity: 100,
-        };
-      });
+      const foods: Food[] = (data.products ?? [])
+        .filter((p: any) => p.product_name || p.product_name_fr)
+        .map((p: any) => {
+          const nutr = p.nutriments ?? {};
+          return {
+            id: p.code,
+            name: p.product_name_fr || p.product_name || "Inconnu",
+            calories: Math.round(nutr["energy-kcal_100g"] ?? 0),
+            proteins: Math.round(nutr.proteins_100g ?? 0),
+            carbs: Math.round(nutr.carbohydrates_100g ?? 0),
+            fats: Math.round(nutr.fat_100g ?? 0),
+            quantity: 100,
+          };
+        });
 
       setResults(foods);
-    } catch (err: any) {
-      if (err.name !== "AbortError") {
-        Alert.alert("Erreur", "Recherche impossible.");
-      }
+    } catch (err) {
+      Alert.alert("Erreur", "Recherche impossible.");
     } finally {
       setLoading(false);
     }
@@ -165,9 +145,12 @@ export default function AddMealScreen() {
       const meals: Meal[] = stored ? JSON.parse(stored) : [];
       meals.push(newMeal);
       await AsyncStorage.setItem("meals", JSON.stringify(meals));
+      setSelectedFoods([]);
+      setQuery("");
+      setMealType(null);
       Alert.alert("✅ Succès", "Repas ajouté !");
       router.replace("/(main)/(home)");
-    } catch (error) {
+    } catch {
       Alert.alert("Erreur", "Impossible de sauvegarder le repas.");
     }
   };
@@ -206,9 +189,8 @@ export default function AddMealScreen() {
         style={styles.input}
         placeholder="Rechercher un aliment..."
         value={query}
-        onChangeText={handleSearch} // ✅ handleSearch au lieu de setQuery
+        onChangeText={handleSearch}
       />
-
       {loading && <Text style={styles.loadingText}>Recherche en cours...</Text>}
 
       {/* Résultats */}
@@ -285,21 +267,9 @@ export default function AddMealScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-    backgroundColor: "#fff",
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: "600",
-    marginBottom: 12,
-  },
-  mealTypeContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginBottom: 12,
-  },
+  container: { flex: 1, padding: 16, backgroundColor: "#fff" },
+  title: { fontSize: 22, fontWeight: "600", marginBottom: 12 },
+  mealTypeContainer: { flexDirection: "row", flexWrap: "wrap", marginBottom: 12 },
   mealTypeButton: {
     padding: 8,
     borderRadius: 8,
@@ -308,115 +278,27 @@ const styles = StyleSheet.create({
     marginRight: 8,
     marginBottom: 8,
   },
-  mealTypeButtonActive: {
-    backgroundColor: "#4CAF50",
-    borderColor: "#4CAF50",
-  },
-  mealTypeText: {
-    color: "#333",
-  },
-  mealTypeTextActive: {
-    color: "#fff",
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 8,
-  },
-  loadingText: {
-    color: "#999",
-    marginBottom: 8,
-    fontStyle: "italic",
-  },
-  resultItem: {
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderColor: "#eee",
-  },
-  resultName: {
-    fontSize: 15,
-    fontWeight: "500",
-  },
-  resultInfo: {
-    fontSize: 12,
-    color: "#888",
-    marginTop: 2,
-  },
-  selectedContainer: {
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontWeight: "600",
-    marginBottom: 8,
-    fontSize: 16,
-  },
-  foodItem: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderColor: "#eee",
-  },
-  foodInfo: {
-    flex: 1,
-  },
-  foodName: {
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  foodMacros: {
-    fontSize: 12,
-    color: "#888",
-  },
-  foodActions: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  quantityInput: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 6,
-    padding: 4,
-    width: 50,
-    textAlign: "center",
-  },
-  gramText: {
-    marginHorizontal: 4,
-    color: "#666",
-  },
-  removeText: {
-    color: "red",
-    marginLeft: 8,
-    fontSize: 16,
-  },
-  scanButton: {
-    marginTop: 16,
-    padding: 12,
-    backgroundColor: "#2196F3",
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  scanButtonText: {
-    color: "#fff",
-    fontWeight: "600",
-  },
-  validateButton: {
-    marginTop: 12,
-    marginBottom: 32,
-    padding: 14,
-    backgroundColor: "#4CAF50",
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  validateButtonDisabled: {
-    backgroundColor: "#ccc",
-  },
-  validateButtonText: {
-    color: "#fff",
-    fontWeight: "600",
-  },
+  mealTypeButtonActive: { backgroundColor: "#4CAF50", borderColor: "#4CAF50" },
+  mealTypeText: { color: "#333" },
+  mealTypeTextActive: { color: "#fff" },
+  input: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 10, marginBottom: 8 },
+  loadingText: { color: "#999", marginBottom: 8, fontStyle: "italic" },
+  resultItem: { paddingVertical: 10, borderBottomWidth: 1, borderColor: "#eee" },
+  resultName: { fontSize: 15, fontWeight: "500" },
+  resultInfo: { fontSize: 12, color: "#888", marginTop: 2 },
+  selectedContainer: { marginTop: 16, marginBottom: 8 },
+  subtitle: { fontWeight: "600", marginBottom: 8, fontSize: 16 },
+  foodItem: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8, borderBottomWidth: 1, borderColor: "#eee" },
+  foodInfo: { flex: 1 },
+  foodName: { fontSize: 14, fontWeight: "500" },
+  foodMacros: { fontSize: 12, color: "#888" },
+  foodActions: { flexDirection: "row", alignItems: "center" },
+  quantityInput: { borderWidth: 1, borderColor: "#ccc", borderRadius: 6, padding: 4, width: 50, textAlign: "center" },
+  gramText: { marginHorizontal: 4, color: "#666" },
+  removeText: { color: "red", marginLeft: 8, fontSize: 16 },
+  scanButton: { marginTop: 16, padding: 12, backgroundColor: "#2196F3", borderRadius: 8, alignItems: "center" },
+  scanButtonText: { color: "#fff", fontWeight: "600" },
+  validateButton: { marginTop: 12, marginBottom: 32, padding: 14, backgroundColor: "#4CAF50", borderRadius: 8, alignItems: "center" },
+  validateButtonDisabled: { backgroundColor: "#ccc" },
+  validateButtonText: { color: "#fff", fontWeight: "600" },
 });
