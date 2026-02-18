@@ -157,7 +157,7 @@ export default function AddMealScreen() {
 
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.title}>Ajouter un repas</Text>
+      {/* <Text style={styles.title}>Ajouter un repas</Text> */}
 
       {/* Type de repas */}
       <View style={styles.mealTypeContainer}>

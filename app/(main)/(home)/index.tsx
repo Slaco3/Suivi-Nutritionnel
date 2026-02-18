@@ -173,19 +173,25 @@ export default function HomeScreen() {
         </View>
       ) : (
         meals.map((meal) => (
-          <View key={meal.id} style={styles.mealCard}>
-            <Text style={styles.mealType}>
-              {MEAL_ICONS[meal.type]} {meal.type}
-            </Text>
-            {meal.foods.map((food) => (
-              <View key={food.id} style={styles.foodRow}>
-                <Text style={styles.foodName}>{food.name}</Text>
-                <Text style={styles.foodCalories}>
-                  {Math.round((food.calories * food.quantity) / 100)} kcal
-                </Text>
-              </View>
-            ))}
-          </View>
+          <Link
+            key={meal.id}
+            href={`/${meal.id}`} // lien vers [id].tsx
+            asChild // permet de wrapper un composant existant
+          >
+            <TouchableOpacity style={styles.mealCard}>
+              <Text style={styles.mealType}>
+                {MEAL_ICONS[meal.type]} {meal.type}
+              </Text>
+              {meal.foods.map((food) => (
+                <View key={food.id} style={styles.foodRow}>
+                  <Text style={styles.foodName}>{food.name}</Text>
+                  <Text style={styles.foodCalories}>
+                    {Math.round((food.calories * food.quantity) / 100)} kcal
+                  </Text>
+                </View>
+              ))}
+            </TouchableOpacity>
+          </Link>
         ))
       )}
 
