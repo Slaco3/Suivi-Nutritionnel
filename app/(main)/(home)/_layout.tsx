@@ -6,6 +6,9 @@ export default function Layout() {
     <Stack.Screen name='index' options={{
       title: "Repas"
     }}/>
+     <Stack.Screen name='[id]' options={{
+      title: "Detail du repas"
+    }}/>
   </Stack>
   )
 }
