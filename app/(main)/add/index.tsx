@@ -1,17 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
-  FlatList,
   StyleSheet,
   Alert,
   ScrollView,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useLocalSearchParams } from "expo-router";
 
 type MealType = "Petit-déjeuner" | "Déjeuner" | "Dîner" | "Snack";
 
@@ -34,70 +32,101 @@ type Meal = {
 
 export default function AddMealScreen() {
   const router = useRouter();
+  const { scannedFood, mealType: scannedMealType } = useLocalSearchParams();
 
   const [mealType, setMealType] = useState<MealType | null>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Food[]>([]);
   const [selectedFoods, setSelectedFoods] = useState<Food[]>([]);
   const [loading, setLoading] = useState(false);
-  // const { scannedFood } = useLocalSearchParams();
-  const { scannedFood, mealType: scannedMealType } = useLocalSearchParams();
 
-  // 🔁 Debounce 400ms
-  useEffect(() => {
-    if (!query.trim()) {
-      setResults([]);
-      return;
-    }
+  const abortRef = useRef<AbortController | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const timeout = setTimeout(() => {
-      searchFood(query);
-    }, 400);
-
-    return () => clearTimeout(timeout);
-  }, [query]);
-
-  useEffect(() => {
-    if (scannedFood) {
-      const food = JSON.parse(scannedFood as string);
-      setSelectedFoods(prev => {
-        if (prev.find(f => f.id === food.id)) return prev; // évite doublon
-        return [...prev, food]; // ✅ utilise prev, pas la closure
-      });
-    }
-  }, [scannedFood]);
-
+  // ✅ Récupère le mealType envoyé depuis la caméra
   useEffect(() => {
     if (scannedMealType) {
       setMealType(scannedMealType as MealType);
     }
   }, [scannedMealType]);
 
+  // ✅ Récupère l'aliment scanné depuis la caméra
+  useEffect(() => {
+    if (scannedFood) {
+      const food = JSON.parse(scannedFood as string);
+      setSelectedFoods((prev) => {
+        if (prev.find((f) => f.id === food.id)) return prev;
+        return [...prev, food];
+      });
+    }
+  }, [scannedFood]);
+
+  // ✅ Handler du TextInput avec debounce + abort
+  const handleSearch = (text: string) => {
+    setQuery(text);
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    debounceRef.current = setTimeout(() => {
+      searchFood(text);
+    }, 500);
+  };
+
+  // ✅ Fetch avec AbortController pour éviter les race conditions
   const searchFood = async (text: string) => {
+    if (text.trim().length < 2) {
+      setResults([]);
+      return;
+    }
+
     try {
       setLoading(true);
-      const res = await fetch(
-        `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(
-          text
-        )}&search_simple=1&json=1&page_size=10`
-      );
+
+      if (abortRef.current) abortRef.current.abort();
+
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      setTimeout(() => controller.abort(), 4000);
+
+      const url =
+        `https://fr.openfoodfacts.org/cgi/search.pl?` +
+        `search_terms=${encodeURIComponent(text)}` +
+        `&search_simple=1&action=process&json=1` +
+        `&fields=code,product_name,product_name_fr,nutriments` +
+        `&page_size=10`;
+
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": "CalorieTracker/1.0",
+          Accept: "application/json",
+        },
+      });
+
       const data = await res.json();
 
-      const foods: Food[] = data.products
-        .filter((p: any) => p.product_name)
-        .map((p: any) => ({
-          id: p.code || Math.random().toString(),
-          name: p.product_name,
-          calories: Math.round(p.nutriments?.["energy-kcal_100g"] ?? 0),
-          proteins: Math.round(p.nutriments?.proteins_100g ?? 0),
-          carbs: Math.round(p.nutriments?.carbohydrates_100g ?? 0),
-          fats: Math.round(p.nutriments?.fat_100g ?? 0),
+      const foods: Food[] = (data.products ?? []).map((p: any) => {
+        const nutr = p.nutriments ?? {};
+
+        return {
+          id: p.code,
+          name: p.product_name_fr || p.product_name || "Inconnu",
+          calories: Math.round(
+            nutr["energy-kcal_100g"] ?? nutr.energy_kcal_100g ?? 0
+          ),
+          proteins: Math.round(nutr.proteins_100g ?? 0),
+          carbs: Math.round(nutr.carbohydrates_100g ?? 0),
+          fats: Math.round(nutr.fat_100g ?? 0),
           quantity: 100,
-        }));
+        };
+      });
 
       setResults(foods);
-    } catch (error) {
-      Alert.alert("Erreur", "Impossible de récupérer les aliments.");
+    } catch (err: any) {
+      if (err.name !== "AbortError") {
+        Alert.alert("Erreur", "Recherche impossible.");
+      }
     } finally {
       setLoading(false);
     }
@@ -128,7 +157,7 @@ export default function AddMealScreen() {
       id: Date.now().toString(),
       type: mealType,
       foods: selectedFoods,
-      date: new Date().toISOString(),
+      date: new Date().toISOString().split("T")[0],
     };
 
     try {
@@ -137,7 +166,7 @@ export default function AddMealScreen() {
       meals.push(newMeal);
       await AsyncStorage.setItem("meals", JSON.stringify(meals));
       Alert.alert("✅ Succès", "Repas ajouté !");
-      router.back();
+      router.replace("/(main)/(home)");
     } catch (error) {
       Alert.alert("Erreur", "Impossible de sauvegarder le repas.");
     }
@@ -177,7 +206,7 @@ export default function AddMealScreen() {
         style={styles.input}
         placeholder="Rechercher un aliment..."
         value={query}
-        onChangeText={setQuery}
+        onChangeText={handleSearch} // ✅ handleSearch au lieu de setQuery
       />
 
       {loading && <Text style={styles.loadingText}>Recherche en cours...</Text>}
@@ -229,12 +258,13 @@ export default function AddMealScreen() {
       {/* Scanner */}
       <TouchableOpacity
         style={styles.scanButton}
-        onPress={() => router.push({
-          pathname: "/add/camera",
-          params: { mealType: mealType ?? "" } // ✅ on envoie le mealType
-        })}
+        onPress={() =>
+          router.push({
+            pathname: "/add/camera",
+            params: { mealType: mealType ?? "" },
+          })
+        }
       >
-
         <Text style={styles.scanButtonText}>📷 Scanner un code-barres</Text>
       </TouchableOpacity>
 

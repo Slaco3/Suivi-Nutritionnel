@@ -58,10 +58,17 @@ export default function CameraScreen() {
         setLoading(true);
 
         try {
-            const res = await fetch(
-                `https://world.openfoodfacts.org/api/v0/product/${data}.json`
+            const response = await fetch(
+                `https://fr.openfoodfacts.org/api/v2/product/${data}.json?fields=product_name,product_name_fr,nutriments`,
+                {
+                    headers: {
+                        "User-Agent": "CalorieTracker/1.0",
+                        Accept: "application/json",
+                    },
+                }
             );
-            const json = await res.json();
+
+            const json = await response.json();
 
             if (json.status === 0 || !json.product) {
                 Alert.alert(
@@ -73,33 +80,39 @@ export default function CameraScreen() {
             }
 
             const p = json.product;
+            const nutr = p.nutriments ?? {};
 
             const food = {
                 id: data,
-                name: p.product_name || "Produit inconnu",
-                calories: Math.round(p.nutriments?.["energy-kcal_100g"] ?? 0),
+                name: p.product_name_fr || p.product_name || "Produit inconnu", // ← fallback FR
+                calories: Math.round(
+                    nutr["energy-kcal_100g"] ?? nutr.energy_kcal_100g ?? 0
+                ),
                 proteins: Math.round(p.nutriments?.proteins_100g ?? 0),
                 carbs: Math.round(p.nutriments?.carbohydrates_100g ?? 0),
                 fats: Math.round(p.nutriments?.fat_100g ?? 0),
                 quantity: 100,
             };
 
-            // ✅ Retour vers add/index avec l'aliment scanné
             router.replace({
                 pathname: "/add",
                 params: {
                     scannedFood: JSON.stringify(food),
-                    mealType: mealType as string // ✅ on le renvoie
-                }
+                    mealType: mealType as string,
+                },
             });
         } catch (error) {
-            Alert.alert("Erreur", "Impossible de récupérer les informations du produit.", [
-                { text: "Réessayer", onPress: () => setScanned(false) },
-            ]);
+            console.error("Erreur fetch:", error); // ← pour débugger
+            Alert.alert(
+                "Erreur",
+                "Impossible de récupérer les informations du produit.",
+                [{ text: "Réessayer", onPress: () => setScanned(false) }]
+            );
         } finally {
             setLoading(false);
         }
     };
+
 
     return (
         <View style={styles.container}>
