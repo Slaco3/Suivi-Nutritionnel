@@ -10,7 +10,6 @@ export default function Page() {
     <View style={styles.container}>
       <Text>Welcome!</Text>
 
-      {/* Quand l'utilisateur est déconnecté */}
       <SignedOut>
         <Link href="/(auth)/sign-in">
           <Text style={styles.link}>Sign in</Text>
@@ -21,13 +20,11 @@ export default function Page() {
         </Link>
       </SignedOut>
 
-      {/* Quand l'utilisateur est connecté */}
       <SignedIn>
         <Text style={styles.email}>
           Hello {user?.emailAddresses[0].emailAddress}
         </Text>
 
-        {/* ✅ Bouton Sign Out */}
         <TouchableOpacity style={styles.button} onPress={() => signOut()}>
           <Text style={styles.buttonText}>Sign out</Text>
         </TouchableOpacity>

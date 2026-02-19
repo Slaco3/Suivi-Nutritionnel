@@ -30,7 +30,7 @@ type Meal = {
   date: string;
 };
 
-const DAILY_GOAL = 2000; // kcal objectif par défaut
+const DAILY_GOAL = 2000; 
 
 const MEAL_ICONS: Record<MealType, string> = {
   "Petit-déjeuner": "🍳",
@@ -105,7 +105,6 @@ export default function HomeScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Header */}
       <View style={styles.header}>
         <SignedIn>
           <Text style={styles.greeting}>
@@ -125,7 +124,6 @@ export default function HomeScreen() {
         <Text style={styles.dateLabel}>{todayLabel}</Text>
       </View>
 
-      {/* Carte calories */}
       <View style={styles.calorieCard}>
         <Text style={styles.calorieTitle}>🔥 Calories</Text>
         <Text style={styles.calorieCount}>
@@ -133,7 +131,6 @@ export default function HomeScreen() {
           {" / "}{DAILY_GOAL} kcal
         </Text>
 
-        {/* Barre de progression */}
         <View style={styles.progressBar}>
           <View
             style={[
@@ -146,7 +143,6 @@ export default function HomeScreen() {
           />
         </View>
 
-        {/* Macros */}
         <View style={styles.macros}>
           <View style={styles.macro}>
             <Text style={styles.macroValue}>{Math.round(totalProteins)}g</Text>
@@ -163,7 +159,7 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* Liste des repas */}
+
       {meals.length === 0 ? (
         <View style={styles.emptyState}>
           <Text style={styles.emptyText}>Aucun repas ajouté aujourd'hui</Text>
@@ -175,8 +171,8 @@ export default function HomeScreen() {
         meals.map((meal) => (
           <Link
             key={meal.id}
-            href={`/${meal.id}`} // lien vers [id].tsx
-            asChild // permet de wrapper un composant existant
+            href={`/${meal.id}`} 
+            asChild 
           >
             <TouchableOpacity style={styles.mealCard}>
               <Text style={styles.mealType}>
@@ -195,7 +191,6 @@ export default function HomeScreen() {
         ))
       )}
 
-      {/* Bouton ajouter */}
       <TouchableOpacity
         style={styles.addButton}
         onPress={() => router.push("/add")}

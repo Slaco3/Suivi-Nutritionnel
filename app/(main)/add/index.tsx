@@ -42,30 +42,42 @@ export default function AddMealScreen() {
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Récupère mealType depuis la caméra
+  useEffect(() => {
+    const restoreFoods = async () => {
+      const temp = await AsyncStorage.getItem("selectedFoodsTemp");
+
+      if (temp) {
+        setSelectedFoods(JSON.parse(temp));
+      }
+    };
+
+    restoreFoods();
+  }, []);
+
   useEffect(() => {
     if (scannedMealType) setMealType(scannedMealType as MealType);
   }, [scannedMealType]);
 
-  // Récupère aliment scanné depuis la caméra
-  useEffect(() => {
-    if (scannedFood) {
-      const food = JSON.parse(scannedFood as string);
-      setSelectedFoods((prev) => {
-        if (prev.find((f) => f.id === food.id)) return prev;
-        return [...prev, food];
-      });
-    }
-  }, [scannedFood]);
 
-  // Debounce pour recherche
+  useEffect(() => {
+    const restoreFoods = async () => {
+      const temp = await AsyncStorage.getItem("selectedFoodsTemp");
+      if (temp) {
+        setSelectedFoods(JSON.parse(temp));
+        await AsyncStorage.removeItem("selectedFoodsTemp"); // nettoie après restauration
+      }
+    };
+    restoreFoods();
+  }, []);
+
+
   const handleSearch = (text: string) => {
     setQuery(text);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => searchFood(text), 500);
+    debounceRef.current = setTimeout(() => searchFood(text), 1000);
   };
 
-  // Recherche aliments via OpenFoodFacts
+
   const searchFood = async (text: string) => {
     if (text.trim().length < 2) {
       setResults([]);
@@ -74,7 +86,7 @@ export default function AddMealScreen() {
 
     try {
       setLoading(true);
-      const url = `https://fr.openfoodfacts.org/cgi/search.pl?` +
+      const url = `https://world.openfoodfacts.org/cgi/search.pl?` +
         `search_terms=${encodeURIComponent(text)}` +
         `&search_simple=1&action=process&json=1` +
         `&fields=code,product_name,product_name_fr,nutriments` +
@@ -106,6 +118,7 @@ export default function AddMealScreen() {
 
       setResults(foods);
     } catch (err) {
+      console.log("SEARCH ERROR:", err);
       Alert.alert("Erreur", "Recherche impossible.");
     } finally {
       setLoading(false);
@@ -145,6 +158,7 @@ export default function AddMealScreen() {
       const meals: Meal[] = stored ? JSON.parse(stored) : [];
       meals.push(newMeal);
       await AsyncStorage.setItem("meals", JSON.stringify(meals));
+      await AsyncStorage.removeItem("selectedFoodsTemp");
       setSelectedFoods([]);
       setQuery("");
       setMealType(null);
@@ -159,7 +173,6 @@ export default function AddMealScreen() {
     <ScrollView style={styles.container}>
       {/* <Text style={styles.title}>Ajouter un repas</Text> */}
 
-      {/* Type de repas */}
       <View style={styles.mealTypeContainer}>
         {(["Petit-déjeuner", "Déjeuner", "Dîner", "Snack"] as MealType[]).map(
           (type) => (
@@ -184,7 +197,6 @@ export default function AddMealScreen() {
         )}
       </View>
 
-      {/* Recherche */}
       <TextInput
         style={styles.input}
         placeholder="Rechercher un aliment..."
@@ -193,7 +205,6 @@ export default function AddMealScreen() {
       />
       {loading && <Text style={styles.loadingText}>Recherche en cours...</Text>}
 
-      {/* Résultats */}
       {results.map((food) => (
         <TouchableOpacity
           key={food.id}
@@ -208,7 +219,13 @@ export default function AddMealScreen() {
         </TouchableOpacity>
       ))}
 
-      {/* Aliments sélectionnés */}
+      {/* {!loading && results.length === 0 && query.trim().length >= 2 && (
+        <Text style={styles.noResultsText}>
+          Aucun produit trouvé pour "{query}"
+        </Text>
+      )} */}
+
+
       {selectedFoods.length > 0 && (
         <View style={styles.selectedContainer}>
           <Text style={styles.subtitle}>Aliments sélectionnés :</Text>
@@ -240,17 +257,22 @@ export default function AddMealScreen() {
       {/* Scanner */}
       <TouchableOpacity
         style={styles.scanButton}
-        onPress={() =>
+        onPress={async () => {
+          await AsyncStorage.setItem(
+            "selectedFoodsTemp",
+            JSON.stringify(selectedFoods)
+          );
+
           router.push({
             pathname: "/add/camera",
             params: { mealType: mealType ?? "" },
-          })
-        }
+          });
+        }}
       >
         <Text style={styles.scanButtonText}>📷 Scanner un code-barres</Text>
       </TouchableOpacity>
 
-      {/* Valider */}
+
       <TouchableOpacity
         disabled={!mealType || selectedFoods.length === 0}
         style={[
@@ -301,4 +323,10 @@ const styles = StyleSheet.create({
   validateButton: { marginTop: 12, marginBottom: 32, padding: 14, backgroundColor: "#4CAF50", borderRadius: 8, alignItems: "center" },
   validateButtonDisabled: { backgroundColor: "#ccc" },
   validateButtonText: { color: "#fff", fontWeight: "600" },
+  noResultsText: {
+    textAlign: "center",
+    color: "#999",
+    fontStyle: "italic",
+    marginTop: 8,
+  },
 });
