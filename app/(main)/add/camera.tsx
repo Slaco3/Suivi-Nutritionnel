@@ -11,6 +11,19 @@ import { useRouter } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useLocalSearchParams } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+
+type Food = {
+  id: string;
+  name: string;
+  calories: number;
+  proteins: number;
+  carbs: number;
+  fats: number;
+  quantity: number;
+};
+
 
 export default function CameraScreen() {
     const router = useRouter();
@@ -26,7 +39,6 @@ export default function CameraScreen() {
         }, [])
     );
 
-    // 🔐 Vérification permission
     if (!permission) {
         return (
             <View style={styles.centered}>
@@ -51,7 +63,7 @@ export default function CameraScreen() {
         );
     }
 
-    // 📷 Scan du code-barres
+
     const handleBarCodeScanned = async ({
         type,
         data,
@@ -100,7 +112,21 @@ export default function CameraScreen() {
                 quantity: 100,
             };
 
-            router.replace({
+
+            // Récupère d'abord ce qui est déjà dans selectedFoodsTemp
+            const tempStored = await AsyncStorage.getItem("selectedFoodsTemp");
+            const tempFoods: Food[] = tempStored ? JSON.parse(tempStored) : [];
+
+            // Vérifie si le produit scanné n'est pas déjà là
+            if (!tempFoods.find(f => f.id === food.id)) {
+                tempFoods.push(food);
+            }
+
+            // Sauvegarde la liste mise à jour
+            await AsyncStorage.setItem("selectedFoodsTemp", JSON.stringify(tempFoods));
+
+
+            router.push({
                 pathname: "/add",
                 params: {
                     scannedFood: JSON.stringify(food),
@@ -108,7 +134,7 @@ export default function CameraScreen() {
                 },
             });
         } catch (error) {
-            console.error("Erreur fetch:", error); // ← pour débugger
+            console.error("Erreur fetch:", error);
             Alert.alert(
                 "Erreur",
                 "Impossible de récupérer les informations du produit.",
@@ -137,13 +163,12 @@ export default function CameraScreen() {
                     ],
                 }}
             >
-                {/* 🎯 Viseur */}
+
                 <View style={styles.overlay}>
                     <View style={styles.topOverlay} />
                     <View style={styles.middleRow}>
                         <View style={styles.sideOverlay} />
                         <View style={styles.scanWindow}>
-                            {/* Coins du viseur */}
                             <View style={[styles.corner, styles.topLeft]} />
                             <View style={[styles.corner, styles.topRight]} />
                             <View style={[styles.corner, styles.bottomLeft]} />

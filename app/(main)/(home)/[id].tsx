@@ -35,7 +35,7 @@ export default function MealDetailScreen() {
   const [meal, setMeal] = useState<Meal | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // ✅ Charger le repas depuis AsyncStorage
+
   useEffect(() => {
     const loadMeal = async () => {
       try {
@@ -61,7 +61,7 @@ export default function MealDetailScreen() {
     loadMeal();
   }, [id]);
 
-  // ✅ Totaux nutritionnels
+
   const getTotals = () => {
     if (!meal) return { kcal: 0, p: 0, c: 0, f: 0 };
 
@@ -87,7 +87,7 @@ export default function MealDetailScreen() {
     };
   };
 
-  // ✅ Supprimer le repas
+
   const deleteMeal = async () => {
     Alert.alert("Supprimer ?", "Voulez-vous supprimer ce repas ?", [
       { text: "Annuler", style: "cancel" },
@@ -113,7 +113,7 @@ export default function MealDetailScreen() {
     ]);
   };
 
-  // ⏳ Loading
+
   if (loading) {
     return (
       <View style={styles.center}>
@@ -128,11 +128,10 @@ export default function MealDetailScreen() {
 
   return (
     <ScrollView style={styles.container}>
-      {/* Titre */}
+
       <Text style={styles.title}>{meal.type}</Text>
       <Text style={styles.date}>📅 {meal.date}</Text>
 
-      {/* Totaux */}
       <View style={styles.totalBox}>
         <Text style={styles.totalTitle}>Total du repas :</Text>
         <Text style={styles.totalText}>🔥 Calories : {totals.kcal} kcal</Text>
@@ -141,7 +140,6 @@ export default function MealDetailScreen() {
         <Text style={styles.totalText}>🥑 Lipides : {totals.f} g</Text>
       </View>
 
-      {/* Liste aliments */}
       <Text style={styles.subtitle}>Aliments :</Text>
 
       {meal.foods.map((food) => (
@@ -160,7 +158,7 @@ export default function MealDetailScreen() {
         </View>
       ))}
 
-      {/* Bouton supprimer */}
+
       <TouchableOpacity style={styles.deleteButton} onPress={deleteMeal}>
         <Text style={styles.deleteText}>🗑 Supprimer ce repas</Text>
       </TouchableOpacity>
